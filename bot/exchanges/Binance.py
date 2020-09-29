@@ -57,7 +57,8 @@ class Binance(BaseExchange):
 		"exchangeInfo": '/api/v3/exchangeInfo',
 		"averagePrice" : '/api/v3/avgPrice',
 		"orderBook" : '/api/v3/depth',
-		"account" : '/api/v3/account'
+		"account" : '/api/v3/account',
+		"tickprice": '/api/v3/ticker/24hr'
 	}
 
 	SYMBOL_DATAS = dict()
@@ -157,11 +158,18 @@ class Binance(BaseExchange):
 		for symb in symbols:
 			Binance.SYMBOL_DATAS[symb['symbol']] = symb
 
+
 	def addCredentials(self, api_key, secret_key):
 		""" Adds API & SECRET keys into the object's memory """
 		new_keys = dict(api_key=api_key, secret_key=secret_key)
 		self.api_keys = new_keys
 		self.has_credentials = True
+
+	def getCurrentTickPrice(self, symbol):
+		url = Binance.BASE_URL + Binance.ENDPOINTS['tickprice']
+		params = {'symbol': symbol.upper()}
+		tick_info = self._get(url, params, self.headers)
+		return tick_info
 
 	def getAccountData(self):
 		""" Gets data for Account connected to API & SECRET Keys given """	
@@ -325,6 +333,25 @@ class Binance(BaseExchange):
 			url = Binance.BASE_URL + Binance.ENDPOINTS['testOrder']
 
 		return self._post(url, params, self.headers)
+
+	def placeOrderFromOrderModel(self, order_model):
+		""" Places order on exchange given a dictionary of parameters.
+			Check this link for more info on the required parameters: 
+			https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md#new-order--trade
+			Parameters
+			--
+				params dict:
+					A dictionary of parameters containing info about the order,
+					such as SIDE (buy/sell), TYPE (market/limit/oco), SYMBOL, etc.
+				test bool:
+					Decides whether this will be a test order or not.
+		"""
+		if order_model.order_type == self.ORDER_TYPE_LIMIT:
+			self.placeLimitOrder(order_model.symbol, order_model.price, order_model.side, order_model.quantity, order_model.is_test, custom_id=order_model.id)
+		if order_model.order_type == self.ORDER_TYPE_MARKET:
+			self.placeMarketOrder(order_model.symbol, order_model.side, order_model.quantity, order_model.is_test, custom_id=order_model.id)
+		if order_model.order_type == self.ORDER_TYPE_STOP_LOSS:
+			self.placeStopLossMarketOrder(order_model.symbol, order_model.price, order_model.side, order_model.quantity, order_model.is_test, custom_id=order_model.id)
 
 	def placeMarketOrder(self, symbol:str, side:str, amount:str, quote_amount=None, 
 	test:bool=False, round_up_amount=False, custom_id=False, verbose=True):
@@ -660,10 +687,9 @@ class Binance(BaseExchange):
 		new_order_response. Should be part of the exchange interface  """
 
 		if order.is_test:
-			order.take_profit_price = self.toValidPrice(
-				symbol = order.symbol,
-				desired_price = Decimal(order.entry_price) * (Decimal(100) + Decimal(bot.profit_target))/Decimal(100), 
-				round_up=True)
+			order.entry_price = self.getCurrentTickPrice(order.symbol)['lastPrice']
+			if (order.order_type == self.ORDER_TYPE_MARKET) and not order.is_entry:
+				order.price = ((Decimal(100) - Decimal(bot.exit_settings.stop_loss_value))/Decimal(100)) * Decimal(order.entry_price)
 
 		else:
 			order.timestamp = new_order_response['transactTime']
@@ -676,5 +702,7 @@ class Binance(BaseExchange):
 			order.executed_quantity =  Decimal(new_order_response['executedQty'])
 			order.status = new_order_response['status']
 			order.side = new_order_response['side']
+			if order.side == 'BUY':
+				order.entry_price = new_order_response['price']
 
 		return order

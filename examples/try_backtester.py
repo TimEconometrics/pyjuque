@@ -10,6 +10,7 @@ from bot.Exchanges.Binance import Binance
 from pandas import DataFrame
 
 from bot.Strategies.BBRSIStrategy import BBRSIStrategy
+from bot.Strategies.AlwaysBuyStrategy import AlwaysBuyStrategy
 from bot.Engine.Backtester import backtest
 from bot.Plotter import PlotData
 
@@ -22,8 +23,8 @@ class dotdict(dict):
 	__delattr__ = dict.__delitem__
 		
 entry_strategy:dotdict = dotdict(dict(
-	strategy_class = BBRSIStrategy,
-	args = (8, 100, 60, 40),
+	strategy_class = AlwaysBuyStrategy,
+	args = (),
 ))
 
 entry_settings:dotdict = dotdict(dict(
@@ -50,10 +51,10 @@ def Main():
 	# Initialize exchanges and test
 	binance = Binance()
 	symbol = "LTCUSDT"
-	df = binance.getSymbolKlines(symbol, "5m", limit=3000)
+	df = binance.getSymbolKlines(symbol, "5m", limit=1000)
 	results = backtest(df, symbol, binance, entry_strategy, entry_settings, exit_settings)
 
-	pprint(results['total_profit_loss'])
+	pprint(results)
 	strategy = entry_strategy.strategy_class(binance, *entry_strategy.args)
 	# strategy.setup(df)
 

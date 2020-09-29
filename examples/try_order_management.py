@@ -5,13 +5,12 @@ root_path = os.path.abspath(
 	os.path.join(curr_path, os.path.pardir, os.path.pardir))
 sys.path.append(root_path)
 
-from bot.Engine.Models import Base, Bot, Order, Pair
-from bot.Engine.OrderManagement import OrderManagement
+from bot.Engine.Models import Base, Bot, Order, Pair, EntrySettings, ExitSettings
+from bot.Engine.BotController import BotController
 from pprint import pprint
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from bot.Strategies.BBRSIStrategy import BBRSIStrategy
 from bot.Strategies.EMAXStrategy import EMACrossover
 from bot.Strategies.AlwaysBuyStrategy import AlwaysBuyStrategy
 
@@ -32,10 +31,25 @@ def initialize_database(session):
 			quote_asset = 'BTC',
 			starting_balance = 0.001,
 			current_balance = 0.001,
-			profit_target = 2,
-			test_run=False
+			test_run=True
 		)
+
 		session.add(myobject)
+
+		entrysets = EntrySettings(
+			id =1, 
+			name ='TimStoploss', 
+			initial_entry_allocation=1,
+			signal_distance = -1,
+			)
+		exitsets = ExitSettings(
+								id=1, 
+								name='TimLoss',
+								profit_target=1,
+								stop_loss_value=0,
+								)
+		myobject.entry_settings = entrysets
+		myobject.exit_settings = exitsets
 		session.commit()
 		pair = Pair(
 			bot_id = myobject.id,
@@ -51,21 +65,43 @@ def initialize_database(session):
 		session.add(pair_2)
 		session.commit()
 
-def Main():
+def clearOrdersFromDB(session):
+	session.query(Order).delete()
+	session.query(Pair).delete()
+	session.commit()
+	pair = Pair(
+		bot_id = 1,
+		symbol = "NEOBTC",
+		current_order_id = None
+	)
+	pair_2 = Pair(
+		bot_id = 1,
+		symbol = "BNBBTC",
+		current_order_id = None
+	)
+	session.add(pair)
+	session.add(pair_2)
+	session.commit()
 
-    session = get_session('sqlite:///app.db')
-    # First time you run this, uncomment the next line
-    initialize_database(session)
-    bot = session.query(Bot).filter_by(name='test_bot_2').first()
-    exchange = Binance(filename=r'C:\Users\31614\Desktop\pyjuque\pyjuque\bot\Exchanges\credentials.txt')
-    strategy = AlwaysBuyStrategy(exchange)
-    om = OrderManagement(session, bot, exchange, strategy)
-    
-    while True:
-        try:
-            om.execute_bot()
-        except KeyboardInterrupt:
-                return
+def Main():
+	resetOrdersPairs = False
+	session = get_session('sqlite:///pyjuquetest.db')
+	# First time you run this, uncomment the next line
+	# initialize_database(session)
+	if resetOrdersPairs:
+		clearOrdersFromDB(session)
+
+	bot = session.query(Bot).filter_by(name='test_bot_2').first()
+	# input your path to credentials here.
+	exchange = Binance(filename=r'C:\Users\31614\Desktop\pyjuque\pyjuque\bot\Exchanges\credentials.txt')
+	strategy = AlwaysBuyStrategy()
+	om = BotController(session, bot, exchange, strategy)
+
+	while True:
+		try:
+			om.executeBot()
+		except KeyboardInterrupt:
+				return
 
 
 if __name__ == '__main__':
